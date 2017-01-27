@@ -27,3 +27,12 @@
 *.exe
 *.out
 *.app
+
+
+
+#Simulator files
+/framework/lib
+/framework/m5
+/framework/output
+
+
