@@ -1,0 +1,17 @@
+[user]
+	email = anders.liland@outlook.com
+	name = Anders Liland
+[color]
+	ui = auto
+[merge]
+	tool = meld
+[diff]
+	tool = meld
+[core]
+	editor = vim
+	excludefile = ~/.gitignore_global
+	autocrlf = input
+[commit]
+	template = ~/.gitcommit_template
+[help]
+	autocorrect = 20
