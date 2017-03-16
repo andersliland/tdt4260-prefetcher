@@ -28,11 +28,13 @@
 *.out
 *.app
 
+prefetchers/c-dc/prefetcher
+prefetchers/c-dc/prefetcher.dSYM
+
+
 
 
 #Simulator files
 /framework/lib
 /framework/m5
 /framework/output
-
-

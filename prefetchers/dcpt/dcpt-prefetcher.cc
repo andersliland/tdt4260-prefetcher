@@ -131,13 +131,13 @@ DCPTEntry * DCPTTable::getEntry(Addr pc)
 		if(pc == entry->getPC())
 		{
 			i = table.erase(i);
-			table.push_front(entry);
+			table.push_head(entry);
 			return entry;
 		}
 	}
 
 	DCPTEntry * newEntry = new DCPTEntry(pc);
-	table.push_front(newEntry);
+	table.push_head(newEntry);
 
 	if(table.size() > entries)
 	{
