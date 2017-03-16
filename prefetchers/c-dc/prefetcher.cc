@@ -40,9 +40,10 @@ class GHBTable{
             head = NULL;
         }
 
+        Addr calculatePrefetchAddr(Addr mem_addr);
         void append(Addr mem_addr);
         void create_list(Addr mem_addr);
-        void add_begin(Addr mem_addr);
+        int add_begin(Addr mem_addr);
         void display_list();
 
         void computeDelta(Addr currentAddress);
@@ -53,6 +54,8 @@ class GHBTable{
         std::map<Addr, GHBEntry* > entries;
         std::vector<int> delta_buffer;
 };
+
+static GHBTable table;
 
 void GHBTable::create_list(Addr mem_addr){
     struct GHBEntry *s, *temp;
@@ -72,27 +75,36 @@ void GHBTable::create_list(Addr mem_addr){
     }
 }
 
-void GHBTable::add_begin(Addr currentAddress){
+int GHBTable::add_begin(Addr currentAddress){
     if(head == NULL){
         cout << "First Create the list." << endl;
         GHBTable::create_list(currentAddress);
-        return;
+        return -1;
     }
     struct GHBEntry *temp;
     temp = new (struct GHBEntry);
     temp->prev = NULL;
     temp->mem_addr = currentAddress;
     temp->delta = currentAddress - head->mem_addr; // calculate delta
-    // add delta to delta array
-    delta_buffer.push_back(temp->delta);
     temp->next = head;
     head->prev = temp;
     head = temp;
-    //cout << "Element inserted" << endl;
+    cout << "Element inserted" << endl;
+    return temp->delta;
+}
+
+Addr GHBTable::calculatePrefetchAddr(Addr mem_addr){
+
+    int d = table.add_begin(mem_addr);
+    delta_buffer.push_back(d);
+
     for(vector<int>::const_iterator i = delta_buffer.begin(); i != delta_buffer.end(); i++){
         cout << *i << ' ';
     }
     cout << endl;
+
+    return 0;
+
 }
 
 void GHBTable::display_list(){
@@ -122,15 +134,6 @@ void GHBTable::computeDelta(Addr currentAddress){
     entry->delta = currentAddress - entry->mem_addr;
 }
 
-
-
-
-
-
-
-static GHBTable table;
-
-
 // --------- PREFETCH SIMULATED FUNCTIONS ------------------------
 void prefetch_init(void){
     std::cout << "prefetch_init" << std::endl;
@@ -138,20 +141,16 @@ void prefetch_init(void){
 
 void prefetch_access(AccessStat stat)
 {
-
+    Addr pf_addr;
 
     //GHBEntry *entry = table->get(stat.mem_addr);
     if(stat.miss){
-        table.add_begin(stat.mem_addr);
+        pf_addr = table.calculatePrefetchAddr(stat.mem_addr);
 
+        if(pf_addr < MAX_PHYS_MEM_ADDR){
+            //issue_prefetch( pf_addr );
+        }
     }
-
-    //delta_buffer.push_back(temp->delta);
-
-
-
-
-
 }
 
 
