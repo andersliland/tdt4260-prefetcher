@@ -39,72 +39,84 @@ class GHBTable{
         GHBTable(){
             head = NULL;
         }
+        const int DeltaCorrelationSequenceLength = 2;
+
 
         Addr calculatePrefetchAddr(Addr mem_addr);
-        void append(Addr mem_addr);
-        void create_list(Addr mem_addr);
+        GHBEntry* create_list(Addr mem_addr);
         int add_begin(Addr mem_addr);
         void display_list();
+        void append(Addr mem_addr);
 
-        void computeDelta(Addr currentAddress);
+
+        void computeDelta(Addr addr, GHBEntry * entry);
         bool correlationHit();
 
         void traverse_and_print();
     private:
         std::map<Addr, GHBEntry* > entries;
         std::vector<int> delta_buffer;
+        std::vector<int> key_register;
+        std::vector<int> comparison_register;
 };
 
-static GHBTable table;
+static GHBTable * table;
 
-void GHBTable::create_list(Addr mem_addr){
+GHBEntry* GHBTable::create_list(Addr mem_addr){
     struct GHBEntry *s, *temp;
     temp = new GHBEntry(mem_addr);
-    //temp->mem_addr = NULL;
     temp->next = NULL;
-    if (head == NULL)
-    {
+    if (head == NULL){ // list is empty
         temp->prev = NULL;
         head = temp;
-    }else{
+        return temp;
+    }else{ // list not empty
         s = head;
         while (s->next != NULL)
             s = s->next;
         s->next = temp;
         temp->prev = s;
+        return s;
     }
 }
 
-int GHBTable::add_begin(Addr currentAddress){
+int GHBTable::add_begin(Addr addr){
     if(head == NULL){
-        cout << "First Create the list." << endl;
-        GHBTable::create_list(currentAddress);
+        cout << "Creating GHB table and adding first element." << endl;
+        GHBTable::create_list(addr);
         return -1;
     }
-    struct GHBEntry *temp;
-    temp = new (struct GHBEntry);
-    temp->prev = NULL;
-    temp->mem_addr = currentAddress;
-    temp->delta = currentAddress - head->mem_addr; // calculate delta
-    temp->next = head;
-    head->prev = temp;
-    head = temp;
-    cout << "Element inserted" << endl;
-    return temp->delta;
+    struct GHBEntry *entry;
+    entry = new (struct GHBEntry);
+    entry->prev = NULL;
+    entry->mem_addr = addr;
+    entry->delta = addr - head->mem_addr; // calculate delta
+    entry->next = head;
+    head->prev = entry;
+    head = entry;
+    cout << "Element inserted\t" << "Addr: " << entry->mem_addr << " Delta: " << entry->delta << endl;
+    return entry->delta;
 }
 
 Addr GHBTable::calculatePrefetchAddr(Addr mem_addr){
+    static int i = 0;
 
-    int d = table.add_begin(mem_addr);
-    delta_buffer.push_back(d);
-
-    for(vector<int>::const_iterator i = delta_buffer.begin(); i != delta_buffer.end(); i++){
-        cout << *i << ' ';
+    // Add two first deltas to Correlation Key Register
+    if (i < DeltaCorrelationSequenceLength) {
+    int delta = table->add_begin(mem_addr);
+    delta_buffer.push_back(delta);
+    key_register.push_back(delta);
+    i++;
+    return -1;
     }
-    cout << endl;
+    //delta_buffer.push_back(table->add_begin(mem_addr));
+    //delta_buffer.push_back(table->add_begin(mem_addr));
 
-    return 0;
-
+    //for(vector<int>::const_iterator i = delta_buffer.begin(); i != delta_buffer.end(); i++){
+    //    cout << *i << ' ';
+    //}
+    //cout << endl;
+    return -1;
 }
 
 void GHBTable::display_list(){
@@ -113,47 +125,58 @@ void GHBTable::display_list(){
         cout << "List empty, nothing to display" << endl;
         return;
     }
+    // Print GHB Table
     q = head;
-    cout << " GHB Table from head :" << endl;
+    cout << "Addr\t";
     while(q != NULL){
-        cout << q->mem_addr << " <-> ";
+        cout << q->mem_addr << "\t";
         q = q->next;
     }
-    cout << "TAIL" << endl;
+    cout << "\tTAIL" << endl;
+    // Print Delta Buffer
     q = head;
+    cout << "Delta\t";
     while(q != NULL){
-        cout << q->delta << " <-> ";
+        cout << q->delta << "\t";
         q = q->next;
     }
+    cout << "\tTAIL" << endl;
 
-    cout << "TAIL" << endl;
+    // Print Correlation Key Register
+    q = head;
+    cout << "Key\t";
+    while(q != NULL){
+        cout << q->delta << "\t";
+        q = q->next;
+    }
+    cout << "\tTAIL" << endl;
+
+    // Print Correlation Comparison Register
+    q = head;
+    cout << "Compare\t";
+    while(q != NULL){
+        cout << q->delta << "\t";
+        q = q->next;
+    }
+    cout << "\tTAIL" << endl;
 }
-
-void GHBTable::computeDelta(Addr currentAddress){
-    GHBEntry *entry = this->entries[currentAddress];
-    entry->delta = currentAddress - entry->mem_addr;
-}
-
 // --------- PREFETCH SIMULATED FUNCTIONS ------------------------
 void prefetch_init(void){
     std::cout << "prefetch_init" << std::endl;
+    table = new GHBTable;
+
 }
 
-void prefetch_access(AccessStat stat)
-{
+void prefetch_access(AccessStat stat){
     Addr pf_addr;
-
-    //GHBEntry *entry = table->get(stat.mem_addr);
     if(stat.miss){
-        pf_addr = table.calculatePrefetchAddr(stat.mem_addr);
-
-        if(pf_addr < MAX_PHYS_MEM_ADDR){
+        pf_addr = table->calculatePrefetchAddr(stat.mem_addr);
+        if(pf_addr < MAX_PHYS_MEM_ADDR && pf_addr != -1){
+            cout << "Issue prefetch for address: " << pf_addr << endl;
             //issue_prefetch( pf_addr );
         }
     }
 }
-
-
 void prefetch_complete(Addr addr){
     cout << "prefetch_complete" << endl;
 }
@@ -161,14 +184,10 @@ void prefetch_complete(Addr addr){
 
 int main( ) {
     AccessStat stat;
-
     prefetch_init();
-    //table.create_list();
 
-
-
-    int miss_addresses[7] = {47,49,54,56,58,63,65};
-    for (int i = 0; i < 7; i++ ){
+    int miss_addresses[9] = {47,49,54,56,58,63,65,70,80};
+    for (int i = 0; i < 9; i++ ){
         stat.pc = 55;
         stat.mem_addr = miss_addresses[i];
         stat.time = 1;
@@ -176,7 +195,7 @@ int main( ) {
         prefetch_access(stat);
     }
 
-    table.display_list();
+    table->display_list();
 
 
     prefetch_complete(stat.mem_addr);
