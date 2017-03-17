@@ -127,6 +127,7 @@ Addr GHBTable::calculatePrefetchAddr(Addr mem_addr){
             indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, CZoneHead));
             ghb_list.push_front(*entry);
 
+            // TODO: figure out why ghb_list is poped every time?
             //if (ghb_list.size() >= GHB_LENGTH_MAX){ // ghb_list is a FIFO. Pop end when list is too long.
             //    cout << "popGHB: " << ghb_list.back().mem_addr << endl;
             //    ghb_list.pop_back();
