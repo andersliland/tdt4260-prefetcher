@@ -14,24 +14,33 @@
 
 #define BLOCK_SIZE 64
 #define MAX_QUEUE_SIZE 100
-#define MAX_PHYS_MEM_ADDR ((uint64_t)(256*1024*1024) - 1)
+#define MAX_PHYS_MEM_ADDR ((uint64_t)(256*1024*1024) - 1) // 268 MB
 
 
 using std::cout;
 using std::endl;
 using std::vector;
 
-struct GHBEntry{
+//const int DeltaCorrelationSequenceLength = 2;
+//const int CZoneSize = 64; // KB
+//const int PrefetchDegree = 4;
+enum State{CZone,addToGHB, key_first, key_second, traverse, prefetch };
 
+struct GHBEntry{
     GHBEntry();
     GHBEntry(Addr mem_addr);
     Addr mem_addr, pc;
-    int delta;
+    int delta, key_first, key_second;
     struct GHBEntry *next, *prev;
 }*head;
-
 GHBEntry::GHBEntry() : mem_addr(0), pc(0), delta(0), next(NULL), prev(NULL){}
 GHBEntry::GHBEntry(Addr mem_addr) : mem_addr(mem_addr), pc(0),delta(0), next(NULL), prev(NULL){}
+
+struct ITEntry{
+    ITEntry();
+    int *ptr;
+};
+ITEntry::ITEntry() : ptr(NULL){}
 
 
 class GHBTable{
@@ -39,25 +48,28 @@ class GHBTable{
         GHBTable(){
             head = NULL;
         }
-        const int DeltaCorrelationSequenceLength = 2;
-
 
         Addr calculatePrefetchAddr(Addr mem_addr);
+        Addr maskCZoneAddr(Addr mem_addr);
+
         GHBEntry* create_list(Addr mem_addr);
         int add_begin(Addr mem_addr);
         void display_list();
         void append(Addr mem_addr);
-
-
         void computeDelta(Addr addr, GHBEntry * entry);
         bool correlationHit();
-
         void traverse_and_print();
+
     private:
+        State state;
+        std::map<Addr, GHBEntry*> indexTable;
+        std::map<Addr, GHBEntry*>::iterator indexTableIterator;
         std::map<Addr, GHBEntry* > entries;
         std::vector<int> delta_buffer;
-        std::vector<int> key_register;
+        std::vector<int> key_vector;
         std::vector<int> comparison_register;
+        int key_register[2];
+        int compare_register[2];
 };
 
 static GHBTable * table;
@@ -97,18 +109,79 @@ int GHBTable::add_begin(Addr addr){
     cout << "Element inserted\t" << "Addr: " << entry->mem_addr << " Delta: " << entry->delta << endl;
     return entry->delta;
 }
+Addr GHBTable::maskCZoneAddr(Addr mem_addr){
+    cout << "mask CZone Addr" << endl;
+    return mem_addr;
+}
+
 
 Addr GHBTable::calculatePrefetchAddr(Addr mem_addr){
-    static int i = 0;
+    //static int i = 0;
+    int delta;
+    Addr CZoneTag;
+    Addr pf_addr = -1;
+    GHBEntry *entry;
+    for (;;){
+    switch (state) {
+        case CZone:
+            //cout << "CZone" << endl;
+            CZoneTag = maskCZoneAddr(mem_addr); // mask CZone tag
+
+            indexTableIterator = indexTable.find(CZoneTag);
+            if (indexTableIterator != indexTable.end()){ // CZone tag found in Index Table
+                    CZoneTag = indexTableIterator->first;
+                    entry = indexTableIterator->second; // index table prt allways points to newest element of same zone in GHB
+                    cout << "CZone tag found: key: " << indexTableIterator->first << " value: " << indexTableIterator->second << endl;
+            }else{ // CZone tag not in Index Table
+                cout << "CZone tag not found, creating new and add to index Table" << endl;
+                //struct ITEntry *e = new (struct ITEntry);
+                entry = new (struct GHBEntry);
+                indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, entry));
+                cout << "CZoneAddr " << CZoneTag << " Entry " << entry << endl;
+            }
+            state = addToGHB;
+        break;
+        case addToGHB:
+            //table->add_begin(Addr addr, )
+
+
+            state = prefetch;
+        break;
+        case key_first:
+            cout << "key_first" << endl;
+            delta = table->add_begin(mem_addr);
+            delta_buffer.push_back(delta);
+            key_register[1] = delta;
+            state = key_second;
+        break;
+        case key_second:
+            cout << "key_second" << endl;
+            delta = table->add_begin(mem_addr);
+            delta_buffer.push_back(delta);
+            key_register[0] = delta;
+            state = traverse;
+        break;
+        case traverse:
+            cout << "traverse" << endl;
+            // traverse GHB and add deltas to Comparison Register
+
+            //GHBEntry *n = head;
+            //while(n != NULL){
+            //}
+            state = prefetch;
+        break;
+        case prefetch:
+            cout << "address" << endl;
+            if (pf_addr == -1)
+                return pf_addr;
+
+        break;
+    }
+
+}
 
     // Add two first deltas to Correlation Key Register
-    if (i < DeltaCorrelationSequenceLength) {
-    int delta = table->add_begin(mem_addr);
-    delta_buffer.push_back(delta);
-    key_register.push_back(delta);
-    i++;
-    return -1;
-    }
+
     //delta_buffer.push_back(table->add_begin(mem_addr));
     //delta_buffer.push_back(table->add_begin(mem_addr));
 
@@ -142,23 +215,6 @@ void GHBTable::display_list(){
     }
     cout << "\tTAIL" << endl;
 
-    // Print Correlation Key Register
-    q = head;
-    cout << "Key\t";
-    while(q != NULL){
-        cout << q->delta << "\t";
-        q = q->next;
-    }
-    cout << "\tTAIL" << endl;
-
-    // Print Correlation Comparison Register
-    q = head;
-    cout << "Compare\t";
-    while(q != NULL){
-        cout << q->delta << "\t";
-        q = q->next;
-    }
-    cout << "\tTAIL" << endl;
 }
 // --------- PREFETCH SIMULATED FUNCTIONS ------------------------
 void prefetch_init(void){
