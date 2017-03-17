@@ -26,6 +26,24 @@ using std::vector;
 //const int PrefetchDegree = 4;
 enum State{CZone,addToGHB, key_first, key_second, traverse, prefetch };
 
+/* PRINT_ELEMENTS()
+ * - prints optional C-string optcstr followed by
+ * - all elements of the collection coll
+ * - separated by spaces
+ */
+template <class T>
+inline void PRINT_ELEMENTS (const T& coll, const char* optcstr="")
+{
+    typename T::const_iterator pos;
+
+    std::cout << optcstr;
+    for (pos=coll.begin(); pos!=coll.end(); ++pos) {
+        std::cout << *pos << ' ';
+    }
+    std::cout << std::endl;
+}
+
+
 struct GHBEntry{
     GHBEntry();
     GHBEntry(Addr mem_addr);
@@ -43,17 +61,20 @@ struct ITEntry{
 ITEntry::ITEntry() : ptr(NULL){}
 
 
+
+
 class GHBTable{
     public:
         GHBTable(){
             head = NULL;
         }
+        Addr *itPtr;
 
         Addr calculatePrefetchAddr(Addr mem_addr);
         Addr maskCZoneAddr(Addr mem_addr);
 
         GHBEntry* create_list(Addr mem_addr);
-        int add_begin(Addr mem_addr);
+        int add_begin(Addr mem_addr, GHBEntry * entry);
         void display_list();
         void append(Addr mem_addr);
         void computeDelta(Addr addr, GHBEntry * entry);
@@ -63,6 +84,8 @@ class GHBTable{
     private:
         State state;
         std::map<Addr, GHBEntry*> indexTable;
+        std::vector<std::map<Addr, int>> indexTable2; 
+        std::vector<GHBEntry*> ghb_list;
         std::map<Addr, GHBEntry*>::iterator indexTableIterator;
         std::map<Addr, GHBEntry* > entries;
         std::vector<int> delta_buffer;
@@ -92,13 +115,13 @@ GHBEntry* GHBTable::create_list(Addr mem_addr){
     }
 }
 
-int GHBTable::add_begin(Addr addr){
+int GHBTable::add_begin(Addr addr, GHBEntry *entry){
     if(head == NULL){
         cout << "Creating GHB table and adding first element." << endl;
         GHBTable::create_list(addr);
         return -1;
     }
-    struct GHBEntry *entry;
+    //struct GHBEntry *entry;
     entry = new (struct GHBEntry);
     entry->prev = NULL;
     entry->mem_addr = addr;
@@ -117,7 +140,7 @@ Addr GHBTable::maskCZoneAddr(Addr mem_addr){
 
 Addr GHBTable::calculatePrefetchAddr(Addr mem_addr){
     //static int i = 0;
-    int delta;
+    int delta = -1;
     Addr CZoneTag;
     Addr pf_addr = -1;
     GHBEntry *entry;
@@ -136,34 +159,42 @@ Addr GHBTable::calculatePrefetchAddr(Addr mem_addr){
                 cout << "CZone tag not found, creating new and add to index Table" << endl;
                 //struct ITEntry *e = new (struct ITEntry);
                 entry = new (struct GHBEntry);
-                indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, entry));
+                indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, entry)); // should value be only a ptr?
                 cout << "CZoneAddr " << CZoneTag << " Entry " << entry << endl;
             }
             state = addToGHB;
         break;
         case addToGHB:
-            //table->add_begin(Addr addr, )
+            cout << "addToGHB" << endl;
+            ghb_list.push_back(entry);
 
+
+
+            PRINT_ELEMENTS(ghb_list, "ghb_list:    ");
 
             state = prefetch;
         break;
         case key_first:
             cout << "key_first" << endl;
-            delta = table->add_begin(mem_addr);
+            //delta = table->add_begin(mem_addr);
             delta_buffer.push_back(delta);
             key_register[1] = delta;
             state = key_second;
         break;
         case key_second:
             cout << "key_second" << endl;
-            delta = table->add_begin(mem_addr);
+            //delta = table->add_begin(mem_addr);
             delta_buffer.push_back(delta);
             key_register[0] = delta;
             state = traverse;
         break;
         case traverse:
             cout << "traverse" << endl;
-            // traverse GHB and add deltas to Comparison Register
+            // (traverse GHB and add deltas to Comparison Register
+            for(std::vector<GHBEntry*>::iterator it = ghb_list.begin(); it != ghb_list.end(); it++){
+
+
+            }
 
             //GHBEntry *n = head;
             //while(n != NULL){
