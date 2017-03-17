@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <vector>
+#include <array>
 
 #include "interface.hh"
 
@@ -25,8 +26,9 @@ using std::vector;
 //const int CZONE_SIZE = 64; // KB
 //const int PREFETCH_DEGREE = 4;
 const int GHB_LENGTH_MAX = 10;
+const int CZoneMask = 2; // number of digits to mask away
 
-enum State{CZone,pushGHB,popGHB, key_first, key_second, traverse, prefetch };
+enum State{CZone,pushGHB, key_first, key_second, traverse, prefetch };
 
 /* PRINT_ELEMENTS()
  * - prints optional C-string optcstr followed by
@@ -48,14 +50,14 @@ inline void PRINT_ELEMENTS (const T& coll, const char* optcstr="")
 
 struct GHBEntry{
     GHBEntry();
-    GHBEntry(Addr mem_addr);
+    GHBEntry(Addr mem_addr, int delta);
     Addr mem_addr, pc;
     int delta, key_first, key_second;
     //struct GHBEntry *next, *prev; // no longer needed wince GHBEntry is in vector
     GHBEntry *next, *prev;
 };
 GHBEntry::GHBEntry() : mem_addr(0), pc(0), delta(0), next(NULL), prev(NULL){}
-GHBEntry::GHBEntry(Addr mem_addr) : mem_addr(mem_addr), pc(0),delta(0), next(NULL), prev(NULL){}
+GHBEntry::GHBEntry(Addr mem_addr, int delta) : mem_addr(mem_addr), pc(0),delta(delta), next(NULL), prev(NULL){}
 
 
 class GHBTable{
@@ -65,86 +67,86 @@ class GHBTable{
         State state;
 
     private:
-        std::map<Addr, GHBEntry> indexTable;
-        std::map<Addr, GHBEntry>::iterator indexTableIterator;
-
+        std::map<Addr, GHBEntry*> indexTable;
+        std::map<Addr, GHBEntry*>::iterator indexTableIterator;
         std::list<GHBEntry> ghb_list;
         std::vector<int> delta_buffer;
-        std::vector<int> key_vector;
-        std::vector<int> comparison_register;
+
+        std::array<int, 2> key_register;
+        //std::array<int , 2> compare_register;
 
 };
 
 static GHBTable * table;
 
 Addr GHBTable::maskCZoneAddr(Addr mem_addr){
-    cout << "mask CZone Addr" << endl;
-    return mem_addr;
+    return mem_addr/(10*CZoneMask) ;
 }
 
 
 Addr GHBTable::calculatePrefetchAddr(Addr mem_addr){
-    //static int i = 0;
     Addr CZoneTag;
     Addr pf_addr = -1;
-    //Addr *itPtr; // should be type Addr? (unsigned long long)
-    GHBEntry entry;
     GHBEntry *CZoneHead = NULL;
+    GHBEntry *entry = new GHBEntry();
+
+    //GHBEntry *entryPtr = &entry;
+    //new(entryPtr) GHBEntry();
+
     for (;;){
     switch (state) {
         case CZone:
             //cout << "CZone" << endl;s
             CZoneTag = maskCZoneAddr(mem_addr); // mask CZone tag
-
             indexTableIterator = indexTable.find(CZoneTag);
             if (indexTableIterator != indexTable.end()){ // CZone tag found in Index Table
-                    CZoneTag = indexTableIterator->first;
-                    CZoneHead = &indexTableIterator->second; // ptr to newest element in same CZone in GHB
-                    GHBEntry entry;
-                    cout << "Found CZoneTag: " << CZoneTag << " GHBEntry addr: " << &CZoneHead << endl;
-            }else{ // CZone tag not in Index Table
-                GHBEntry entry;
-                indexTable.insert(std::pair<Addr, GHBEntry>(CZoneTag, entry));
-                cout << "CZone tag not found, add new: " << "CZoneTag: " << CZoneTag << " GHBEntry addr: " << &entry << endl;
+                    //CZoneTag = indexTableIterator->first;
+                    CZoneHead = indexTableIterator->second; // ptr to newest element in same CZone in GHB
+
+                    //cout << "Found CZoneTag: " << CZoneTag << " *CZoneHead: " << CZoneHead << " CZoneHead->mem_addr: " << CZoneHead->mem_addr << endl;
+            }else{ // tag not found
+                CZoneHead = entry;
+                CZoneHead->mem_addr = mem_addr;
+                indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, CZoneHead));
+                //cout << "CZoneTag not found, add new: " << "CZoneTag: " << CZoneTag << " *CZoneHead: " << CZoneHead << " CZoneHead->mem_addr: " << CZoneHead->mem_addr << endl;
             }
             state = pushGHB;
         break;
         case pushGHB:
-            cout << "pushGHB" << endl;
-            entry.mem_addr = mem_addr;
+            entry->mem_addr = mem_addr;
+            entry->delta = mem_addr - CZoneHead->mem_addr;
+            entry->next = CZoneHead;
+            entry->prev = NULL;
+            cout << "mem_addr: " << entry->mem_addr << " Delta: " << entry->delta << " struct addr: " << entry << endl;
 
-            if (CZoneHead != NULL){ // another element in same CZone exsist
-                entry.next = CZoneHead;
-                entry.prev = NULL;
-                entry.delta = mem_addr - CZoneHead->mem_addr;
-            }else{ // no element in same CZone exsist
-                entry.next = NULL;
-                entry.prev = NULL;
-                //entry->delta = Invallid; Can delta be negative?
-            }
-            ghb_list.push_front(entry);
-            state = popGHB;
-        break;
-        case popGHB:
-            if (ghb_list.size() >= GHB_LENGTH_MAX){
-                cout << "popGHB: " << ghb_list.back().mem_addr << endl;
-                ghb_list.pop_back();
-            }
-            state = traverse;
+            //update value in Inde prt Table
+            CZoneHead->prev = entry;
+            CZoneHead = entry;
+            indexTableIterator->second = entry; // update ptr in map to point to newest emelent in CZone
+            //cout << "Update Index Table: CZoneTag " << CZoneTag << " *CZoneHead: " << CZoneHead << " CZoneHead->mem_addr: " << CZoneHead->mem_addr << endl;
+            indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, CZoneHead));
+            ghb_list.push_front(*entry);
+
+            //if (ghb_list.size() >= GHB_LENGTH_MAX){ // ghb_list is a FIFO. Pop end when list is too long.
+            //    cout << "popGHB: " << ghb_list.back().mem_addr << endl;
+            //    ghb_list.pop_back();
+            //}
+            state = key_first;
         break;
         case key_first:
+            key_register[0] = entry->delta;
+            key_register[1] = CZoneHead->delta;
+            //cout << "key_register[0] = " << key_register[0] << "\t" << "key_register[1] = " << key_register[1] << endl;
 
+            state = traverse;
         break;
         case key_second:
 
         break;
         case traverse:
-            cout << "traverse" << endl;
+            //cout << "traverse" << endl;
             // (traverse GHB and add deltas to Comparison Register
-            for(std::list<GHBEntry>::iterator it = ghb_list.begin(); it != ghb_list.end(); it++){
-                cout << "Addr: " <<  it->mem_addr << "Delta: " << it->delta << endl;
 
-            }
 
             //GHBEntry *n = head;
             //while(n != NULL){
@@ -152,10 +154,15 @@ Addr GHBTable::calculatePrefetchAddr(Addr mem_addr){
             state = prefetch;
         break;
         case prefetch:
-            cout << "prefetch" << endl;
+            //cout << "prefetch" << endl;
+            for(std::list<GHBEntry>::iterator it = ghb_list.begin(); it != ghb_list.end(); it++){
+                //cout << "Addr: " <<  it->mem_addr << " Delta: " << it->delta << endl;
+
+            }
 
             //PRINT_ELEMENTS(ghb_list, "ghb_list:\t");
             pf_addr = -1;
+            state = CZone;
             return pf_addr;
 
         break;
@@ -190,6 +197,7 @@ void prefetch_access(AccessStat stat){
             cout << "Issue prefetch for address: " << pf_addr << endl;
             //issue_prefetch( pf_addr );
         }
+
     }
 }
 void prefetch_complete(Addr addr){
@@ -201,7 +209,7 @@ int main( ) {
     AccessStat stat;
     prefetch_init();
 
-    int miss_addresses[9] = {47,49,54,56,58,63,65,70,80};
+    int miss_addresses[9] = {1147,1149,1154,1156,1158,1163,1165,1170,1180};
     for (int i = 0; i < 9; i++ ){
         stat.pc = 55;
         stat.mem_addr = miss_addresses[i];
