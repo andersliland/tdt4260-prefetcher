@@ -33,6 +33,8 @@ const int CZoneMask = 3; // number of digits to mask away
 static int Timestep = 0;
 
 enum State{CZone,pushGHB, traverse, prefetch };
+std::vector<int> delta_buffer;
+
 
 /* PRINT_ELEMENTS()
  * - prints optional C-string optcstr followed by
@@ -74,14 +76,13 @@ class GHBTable{
         std::map<Addr, GHBEntry*> indexTable;
         std::map<Addr, GHBEntry*>::iterator indexTableIterator;
         std::list<GHBEntry> ghb_list;
-        std::vector<int> delta_buffer;
 
         std::array<int, 2> key_register;
         std::array<int, 2> compare_register;
 
 };
 
-static GHBTable * GHB;
+static GHBTable * table;
 
 // Mask the 'CZoneMask' MSB of mem_addr
 Addr GHBTable::maskCZoneAddr(Addr mem_addr){
@@ -140,6 +141,10 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
             indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, CZoneHead));
             ghb_list.push_front(*entry);
 
+            //cout << entry->mem_addr << endl;
+            //cout << "GHB size " << ghb_list.size()  << endl;
+            //PRINT_ELEMENTS(ghb_list, "ghb_list:\t");
+
             // TODO: figure out why ghb_list is poped every time?
             if (ghb_list.size() >= GHB_LENGTH_MAX){ // ghb_list is a FIFO. Pop end when list is too long.
                 //cout << "popGHB: " << ghb_list.back().mem_addr << endl;
@@ -166,48 +171,47 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
                 }
             }
             if( state == prefetch){ // continue to prefetch case
+                cout << "Correlation Hit " << endl;
                 break;
             }else{ // not prefetch for this miss address
                 state = CZone;
-                return delta_buffer;
+                return {}; // list initialisation
             }
 
         }
         case prefetch:
             cout << "prefetch " << endl;
-
             state = CZone;
-
             return delta_buffer;
     } // switch
 } // while
-    //return delta_buffer;
 }
 
 // --------- PREFETCH SIMULATED FUNCTIONS ------------------------
 void prefetch_init(void){
     std::cout << "prefetch_init" << std::endl;
-    GHB = new GHBTable;
+    table = new GHBTable;
     std::list<GHBEntry> ghb_list;
     ghb_list.clear();
 
 }
 
 void prefetch_access(AccessStat stat){
-    Addr pf_addr = 0, temp_addr = 0;
+    Addr pf_addr;
     std::vector<int> temp_delta_buffer;
     if(stat.miss){
-        temp_delta_buffer = GHB->calculatePrefetchAddr(stat.mem_addr);
-        
+        temp_delta_buffer = table->calculatePrefetchAddr(stat.mem_addr);
+
+
+        cout << temp_delta_buffer[1] << endl;
+
         for(int i = 0; i < PREFETCH_DEGREE; i++){
-            pf_addr = temp_addr + temp_delta_buffer[i];
             if(pf_addr < MAX_PHYS_MEM_ADDR && pf_addr != -1){
                 cout << "Issue prefetch for address: " << pf_addr << endl;
                 //issue_prefetch( pf_addr );
             }else{
                 cout << "Not issuing prefetch" << endl;
             }
-            temp_addr = pf_addr;
         }
     }
 }
