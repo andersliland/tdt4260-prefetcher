@@ -89,6 +89,7 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
             cout << "\n\n" << endl;
             cout << "TIMESTEP\t" << Timestep << endl;
             CZoneTag = maskCZoneAddr(mem_addr); // mask CZone tag
+            entry->CZoneTag = CZoneTag;
             cout << "CZoneTag:" << CZoneTag << endl;
             indexTableIterator = indexTable.find(CZoneTag);
             if (indexTableIterator != indexTable.end()){ // CZone tag found in Index Table
@@ -134,34 +135,30 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
         break;
         case traverse: // Traverse GHB in correft CZone and add deltas to Comparison Register
         {
-            /*// Print GHB list
+            // Print GHB list
             cout << "GHB:" << endl;
             for (std::list<GHBEntry>::const_iterator iterator = ghb_list.begin(), end = ghb_list.end(); iterator != end; ++iterator) {
-                cout << "\tMem_addr: " << iterator->mem_addr << " Delta: " << iterator->delta <<  endl;
+                if (iterator->CZoneTag == CZoneTag)
+                    cout << "\tMem_addr: " << iterator->mem_addr << " Delta: " << iterator->delta <<  endl;
             }
-            */
+
 
             std::list<GHBEntry>::iterator i = ghb_list.begin();
             //std::advance(i,1); // advance itterator one elements from head of list. The first element will always have delta of 0
 
-            /*
+
             // Traverse GHB from head to tail (new to old), add deltas to Comparison register.
             for(std::list<GHBEntry>::iterator it = i; it != ghb_list.end(); it++){
+                if (it->CZoneTag == CZoneTag){
                 compare_register[1] = compare_register[0];
                 compare_register[0] = it->delta;
-
                 delta_buffer.insert(delta_buffer.begin(), compare_register[1]);
-
-                if(compare_register[0] == key_register[0] && compare_register[1] == key_register[1] && it->mem_addr != mem_addr ){ //correlation hits
-                    state = prefetch;
+                    if(compare_register[0] == key_register[0] && compare_register[1] == key_register[1] && it->mem_addr != mem_addr ){ //correlation hits
+                        state = prefetch;
+                    }
                 }
-            }*/
-            temp = CZoneHead;
-            /*while(CZoneHead->next != NULL){
-                cout << CZoneHead->mem_addr << endl;
-                temp = CZoneHead->next;
             }
-            */
+
 
 
             if( state == prefetch){ // continue to prefetch case
@@ -236,16 +233,16 @@ int main( ) {
     AccessStat stat;
     prefetch_init();
 
-    int pc[7] = {1,2,3,4,5,6,7};
+    int pc[12] = {1,2,3,4,5,6,7};
     int miss_addresses[12] = {1147,1245,1149,1250,1255, 1260,1270,1154,1156,1158,1163,1165};
-    for (int i = 0; i < 7; i++ ){
+
+    for (int i = 0; i < 12; i++ ){
         stat.pc = pc[i];
         stat.mem_addr = miss_addresses[i];
         stat.time = 1;
         stat.miss = 1;
         prefetch_access(stat);
     }
-
     prefetch_complete(stat.mem_addr);
     return 0;
 }
