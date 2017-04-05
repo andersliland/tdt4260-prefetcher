@@ -2,9 +2,9 @@
 PROGRAM_NAME = prefetcher
 
 CC=gcc
-CXX=g++
+CXX=g++ -std=c++0x
 RM= rm -f
-CPPFLAGS= -g -Wall
+CPPFLAGS= -g  -Wall
 
 
 SRCS=prefetcher.cc
