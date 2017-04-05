@@ -26,8 +26,8 @@ using std::vector;
 
 //const int DELTA_CORRELATION_SEQUENCE_LENGTH = 2;
 //const int CZONE_SIZE = 64; // number of bytes in CZone
-const int PREFETCH_DEGREE = 3;
-const int GHB_LENGTH_MAX = 10;
+const int PREFETCH_DEGREE = 5;
+const int GHB_LENGTH_MAX = 20;
 const int CZoneMask = 3; // number of digits to mask away
 
 static int Timestep = 0;
@@ -52,8 +52,11 @@ class GHBTable{
         State state;
 
     private:
+
+        static int GHBNumberOfEntries;
         std::map<Addr, GHBEntry*> indexTable;
         std::map<Addr, GHBEntry*>::iterator indexTableIterator;
+
         std::list<GHBEntry> ghb_list;
 
         std::array<int, 2> key_register;
@@ -61,6 +64,8 @@ class GHBTable{
 
         std::vector<int> delta_buffer;
 };
+
+int GHBTable::GHBNumberOfEntries = 0;
 
 static GHBTable * table;
 
@@ -75,8 +80,8 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
     Addr CZoneTag;
     GHBEntry *CZoneHead = NULL;
     GHBEntry *entry = new GHBEntry();
-    delta_buffer.clear(); // remove all values from previous calulation
-    ghb_list.clear();
+    delta_buffer.clear();
+
     while(true){
     switch (state) {
 
@@ -119,12 +124,10 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
             //cout << "Update Index Table: CZoneTag " << CZoneTag << " *CZoneHead: " << CZoneHead << " CZoneHead->mem_addr: " << CZoneHead->mem_addr << endl;
             indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, CZoneHead));
             ghb_list.push_front(*entry);
+            GHBNumberOfEntries++;
 
-            // TODO: figure out why ghb_list is poped every time?
-            cout << "GHB size " << ghb_list.size() << endl;
-            if (ghb_list.size() >= GHB_LENGTH_MAX){ // ghb_list is a FIFO. Pop end when list is too long.
-                //cout << "popGHB: " << ghb_list.back().mem_addr << endl;
-                //ghb_list.pop_back();
+            if (GHBNumberOfEntries > GHB_LENGTH_MAX){ // ghb_list is a FIFO. Pop end when list is too long.
+                ghb_list.pop_back();
             }
             state = traverse;
         break;
@@ -133,7 +136,7 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
             // Print GHB list
             cout << "GHB:" << endl;
             for (std::list<GHBEntry>::const_iterator iterator = ghb_list.begin(), end = ghb_list.end(); iterator != end; ++iterator) {
-                cout << "Mem_addr: " << iterator->mem_addr << " Delta: " << iterator->delta  << " CZoneTag: " <<  endl;
+                cout << "Mem_addr: " << iterator->mem_addr << " Delta: " << iterator->delta <<  endl;
             }
 
 
@@ -141,19 +144,18 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
             std::list<GHBEntry>::iterator i = ghb_list.begin();
             std::advance(i,1); // advance itterator two elements from head of list
 
-            // Traverse GHB backward, add deltas to Comparison register.
+            // Traverse GHB from head to tail (new to old), add deltas to Comparison register.
             for(std::list<GHBEntry>::iterator it = i; it != ghb_list.end(); it++){
                 compare_register[1] = compare_register[0];
                 compare_register[0] = it->delta;
-
+                auto index = delta_buffer.begin();
+                delta_buffer.insert(index, compare_register[1]);
 
                 if(compare_register[0] == key_register[0] && compare_register[1] == key_register[1] && it->mem_addr != mem_addr ){ //correlation hits
                     state = prefetch;
                 }
             }
 
-            auto index = delta_buffer.begin();
-            delta_buffer.insert(index, compare_register[1]);
 
             if( state == prefetch){ // continue to prefetch case
                 cout << "Correlation Hit " << endl;
@@ -177,13 +179,6 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
 void prefetch_init(void){
     std::cout << "prefetch_init" << std::endl;
     table = new GHBTable;
-    GHBEntry *entry2 = new GHBEntry();
-    std::list<GHBEntry> ghb_list;
-    ghb_list.clear();
-    cout << "init ghb size " << ghb_list.size() << endl;
-    ghb_list.push_front(*entry2);
-    cout << "init ghb size " << ghb_list.size() << endl;
-
 
 }
 
@@ -206,8 +201,7 @@ void prefetch_access(AccessStat stat){
                 cout << "temp_delta_buffer[" << j << "]: " << temp_delta_buffer[j] << endl;
                 j++;
             }
-
-            for(int i = 0; i < (PREFETCH_DEGREE && delta_buffer_size); i++){
+            for(int i = 0; i < PREFETCH_DEGREE; i++){
                 pf_addr = mem_addr + temp_delta_buffer[i];
                 if(pf_addr < MAX_PHYS_MEM_ADDR){
                     cout << "Issue prefetch for address: " << pf_addr << endl;
