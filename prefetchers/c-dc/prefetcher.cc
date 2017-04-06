@@ -2,7 +2,6 @@
 // Computer Acvhitecture NTNU 2017
 // Anders Liland and Adrian Ribe
 
-
 #include <iostream>
 #include <algorithm>
 #include <iterator>
@@ -19,14 +18,15 @@
 #define BLOCK_SIZE 64 // Size of cache blocks (cache lines) in bytes.
 #define MAX_QUEUE_SIZE 100 // Maximum number of pending prefetch requests.
 #define MAX_PHYS_MEM_ADDR ((uint64_t)(256*1024*1024) - 1) // 268 435 455
+// mem_addr is 28 bit
 
 using namespace std;
 
 //const int DELTA_CORRELATION_SEQUENCE_LENGTH = 2;
 //const int CZONE_SIZE = 64; // number of bytes in CZone
-const int PREFETCH_DEGREE = 5;
-const int GHB_LENGTH_MAX = 13;
-const int CZoneMask = 2; // number of digits to mask away
+const int PREFETCH_DEGREE = 2;
+const int GHB_LENGTH_MAX = 100;
+const int CZoneMask = 3; // number of digits to mask away
 
 static int Timestep = 0;
 
@@ -58,15 +58,13 @@ class GHBTable{
         list<GHBEntry> ghb_list;
         int key_register[2];
         int compare_register[2];
-        std::vector<int> delta_buffer;
+        vector<int> delta_buffer;
 };
 int GHBTable::GHBNumberOfEntries = 0;
 static GHBTable * table;
 
 // Mask the 'CZoneMask' MSB of mem_addr
 Addr GHBTable::maskCZoneAddr(Addr mem_addr){
-    // mem_addr is 28 bit
-    // return mem_addr >> (ADDR_BITWIDTH - CZoneMask)
     return mem_addr/pow(10,CZoneMask);
 }
 
@@ -84,7 +82,7 @@ void GHBTable::printGHB(int CZoneTag){
 void GHBTable::printDeltaBuffer(vector<int> s){
     int j = 0;
     cout << "DB:";
-    for(auto it = s.begin(); it != s.end(); it++){
+    for(vector<int>::iterator it = s.begin(); it != s.end(); it++){
         cout << "\t[" << j << "]\tDeltaBuffer: " << *it << endl;
         j++;
     }
@@ -143,7 +141,6 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
 
             if (GHBNumberOfEntries > GHB_LENGTH_MAX){ // ghb_list is a FIFO. Pop end when list is too long.
                 cout << "pop ghb_list " << endl;
-                ghb_list.pop_back();
             }
             state = traverse;
         break;
@@ -163,7 +160,7 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
                         if(compare_register[0] == key_register[0] && compare_register[1] == key_register[1] && it->mem_addr != mem_addr ){ //correlation hits
                             state = CZone;
                             cout << "correltaion hit" << endl;
-                            //delta_buffer.pop_back();
+                            delta_buffer.pop_back();
                             return delta_buffer;
                         }
                     }
@@ -184,12 +181,14 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
 
 // --------- PREFETCH SIMULATED FUNCTIONS ------------------------
 void prefetch_init(void){
+    //TODO:DPRINTF(HWPrefetch, "HWPrefetch\tInitializing prefetcher\n");
     std::cout << "prefetch_init" << std::endl;
     table = new GHBTable;
 
 }
 
 void prefetch_access(AccessStat stat){
+
     Addr pf_addr = 0, mem_addr = stat.mem_addr;
     std::vector<int> temp_delta_buffer;
     if(stat.miss){ //calculate prefetch address only on miss
@@ -207,9 +206,11 @@ void prefetch_access(AccessStat stat){
                     j = 0;
                 }
                 pf_addr = mem_addr + temp_delta_buffer[j];
-                if(pf_addr < MAX_PHYS_MEM_ADDR && pf_addr > 0){
+                if(pf_addr < MAX_PHYS_MEM_ADDR){
                     cout << "Issue prefetch for address: " << pf_addr << endl;
-                    //issue_prefetch( pf_addr );
+                    //TODO:DPRINTF(HWPrefetch, "HWPrefetch\tAddress %#x was accessed. Prefetched %#x \n", stat.mem_addr, pf_addr);
+                    //TODO:if(!in_cache(pf_addr) && !in_mshr_queue(pf_addr)) //TODO: does this matter?
+                    //TODO:    issue_prefetch(pf_addr);
                 }else{
                     cout << "Prefetch address out of bounds " << pf_addr << endl;
                 }
@@ -222,10 +223,18 @@ void prefetch_access(AccessStat stat){
 }
 
 void prefetch_complete(Addr addr){
+    //TODO:DPRINTF(HWPrefetch,"HWPrefetch\tprefetch_complete\n");
     cout << "prefetch_complete" << endl;
 }
 
+// BEFORE EACH RUN
+// Decomment issue_prefetch()
+// Change CZoneSize
+// Uncommen DPRINTF
+// Uncomment
 
+
+// ######## REMOVE BEFORE SIMULATOR ######
 int main( ) {
     AccessStat stat;
     prefetch_init();
