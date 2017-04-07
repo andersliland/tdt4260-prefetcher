@@ -1,14 +1,9 @@
 /*
- * Awesome DCPT-based prefetcher from
- * https://raw.githubusercontent.com/skordal/tdt4260-prefetcher/master/dcpt-prefetcher.cc
+ * Awesome DCPT-based prefetcher
  */
 
 #include "interface.hh"
 #include <list>
-
-#define DELTAPTR_INC(x)	((x + NUMBER_OF_DELTAS + 1) % NUMBER_OF_DELTAS)
-#define DELTAPTR_DEC(x)	((x + NUMBER_OF_DELTAS - 1) % NUMBER_OF_DELTAS)
-
 
 class DCPTEntry
 {
@@ -21,41 +16,39 @@ class DCPTEntry
 
 		void miss(Addr & addr, Addr ** prefetch, int & size);
 	private:
-		void collectPrefetchCandidates(int start, int stop, Addr ** prefetch, int & size) const;
-
-		Addr pc, lastAddress, lastPrefetch; //Addr is a type declared in interface.hh
+		Addr pc, lastAddress, lastPrefetch;
 		int deltaArray[DCPTEntry::NUMBER_OF_DELTAS];
 		int deltaNext;
+
+		void collectPrefetchCandidates(int start, int stop, Addr ** prefetch, int & size) const;
+
 };
 
 class DCPTTable
 {
 	public:
-		DCPTTable(int entries); //constructor
-		~DCPTTable(); // destructor
+		DCPTTable(int entries);
+		~DCPTTable();
 
 		DCPTEntry * getEntry(Addr pc);
 	private:
-    //create list containing pointers to DCPEntry objects, call it table
 		std::list<DCPTEntry *> table;
 		int entries;
 };
 
 static DCPTTable * table;
 
-
+#define DELTAPTR_INC(x)	((x + NUMBER_OF_DELTAS + 1) % NUMBER_OF_DELTAS)
+#define DELTAPTR_DEC(x)	((x + NUMBER_OF_DELTAS - 1) % NUMBER_OF_DELTAS)
 
 using namespace std;
 
-// Constructer for DCPEntry class
-// : initializer list (lastAdress(0) assigns value 0 to lastAdress variable)
 DCPTEntry::DCPTEntry(Addr pc) : pc(pc), lastAddress(0), lastPrefetch(0), deltaNext(0)
 {
 	memset(deltaArray, 0, NUMBER_OF_DELTAS * sizeof(int));
 }
 
-// function calculating
-void DCPTEntry::miss(Addr &addr, Addr **prefetch, int & size)
+void DCPTEntry::miss(Addr & addr, Addr ** prefetch, int & size)
 {
 	int delta = addr - lastAddress;
 	delta /= BLOCK_SIZE;
@@ -76,7 +69,6 @@ void DCPTEntry::miss(Addr &addr, Addr **prefetch, int & size)
 
 	for(int i = start; i != DELTAPTR_DEC(deltaNext); i = DELTAPTR_DEC(i))
 	{
-    // preforme delta correlation, from article Grannaes
 		if(deltaArray[DELTAPTR_DEC(i)] == a && deltaArray[i] == b)
 		{
 			collectPrefetchCandidates(DELTAPTR_INC(i), start, prefetch, size);
@@ -85,7 +77,6 @@ void DCPTEntry::miss(Addr &addr, Addr **prefetch, int & size)
 		}
 	}
 }
-
 
 void DCPTEntry::collectPrefetchCandidates(int start, int stop, Addr ** prefetch, int & size) const
 {
@@ -113,15 +104,11 @@ void DCPTEntry::collectPrefetchCandidates(int start, int stop, Addr ** prefetch,
 	size = candidates.size();
 }
 
-// constructor
 DCPTTable::DCPTTable(int entries) : entries(entries)
 {
 
 }
 
-// why not DCPTABLE::getEntry, because of pointer?
-// search for exsisting entry in table, search index is PC
-// if no entry found, a new entry is created
 DCPTEntry * DCPTTable::getEntry(Addr pc)
 {
 	list<DCPTEntry *>::iterator i = table.begin();
@@ -131,13 +118,13 @@ DCPTEntry * DCPTTable::getEntry(Addr pc)
 		if(pc == entry->getPC())
 		{
 			i = table.erase(i);
-			table.push_head(entry);
+			table.push_front(entry);
 			return entry;
 		}
 	}
 
 	DCPTEntry * newEntry = new DCPTEntry(pc);
-	table.push_head(newEntry);
+	table.push_front(newEntry);
 
 	if(table.size() > entries)
 	{
@@ -155,7 +142,7 @@ void prefetch_init(void)
 	/* This is the place to initialize data structures. */
 
 	table = new DCPTTable(82);
-	DPRINTF(HWPrefetch, "Initialized DCPT-based prefetcher\n");
+	//DPRINTF(HWPrefetch, "Initialized DCPT-based prefetcher\n");
 }
 
 void prefetch_access(AccessStat stat)
@@ -166,7 +153,6 @@ void prefetch_access(AccessStat stat)
 	if(stat.miss)
 	{
 		DCPTEntry * entry = table->getEntry(stat.pc);
-    // getEntry
 		entry->miss(stat.mem_addr, &prefetchList, size);
 	}
 
@@ -200,4 +186,25 @@ void prefetch_access(AccessStat stat)
 
 void prefetch_complete(Addr addr)
 {
+
+}
+
+
+// ######## REMOVE BEFORE SIMULATOR ######
+int main( ) {
+    AccessStat stat;
+    prefetch_init();
+
+    int pc[12] = {1,2,3,4,5,6,7};
+    int miss_addresses[12] = {1147,1245,1149,1250,1255, 1260,1270,1154,1156,1158,1163,1165};
+
+    for (int i = 0; i < 12; i++ ){
+        stat.pc = pc[i];
+        stat.mem_addr = miss_addresses[i];
+        stat.time = 1;
+        stat.miss = 1;
+        prefetch_access(stat);
+    }
+    prefetch_complete(stat.mem_addr);
+    return 0;
 }

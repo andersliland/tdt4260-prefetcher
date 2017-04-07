@@ -24,7 +24,7 @@ using namespace std;
 
 //const int DELTA_CORRELATION_SEQUENCE_LENGTH = 2;
 //const int CZONE_SIZE = 64; // number of bytes in CZone
-const int PREFETCH_DEGREE = 2;
+const int PREFETCH_DEGREE = 4;
 const int GHB_LENGTH_MAX = 100;
 const int CZoneMask = 3; // number of digits to mask away
 
@@ -96,11 +96,7 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
     key_register[0] = -1;
     compare_register[0] = -1;
 
-    while(true){
-    switch (state) {
-
         // Check IndexTable for ZCone tag, and add to list if not pressent.
-        case CZone:
             Timestep++;
             cout << "\n\n" << endl;
             cout << "TIMESTEP\t" << Timestep << endl;
@@ -116,13 +112,10 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
                 CZoneHead->mem_addr = mem_addr;
                 indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, CZoneHead));
             }
-            state = pushGHB;
-        break;
 
-        // Add miss addr to GHB list, calculate delta and add miss addr to Correlation Key Register
-        case pushGHB:
             entry->mem_addr = mem_addr;
-            entry->delta = mem_addr - CZoneHead->mem_addr;
+            int temp_delta = mem_addr - CZoneHead->mem_addr;
+            entry->delta = abs(temp_delta); //TODO: can delta be negative?
             cout << "Addr: " <<  entry->mem_addr << " Delta: " << entry->delta<< endl;
 
             // add deltas to key_register
@@ -142,15 +135,12 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
             if (GHBNumberOfEntries > GHB_LENGTH_MAX){ // ghb_list is a FIFO. Pop end when list is too long.
                 cout << "pop ghb_list " << endl;
             }
-            state = traverse;
-        break;
-        case traverse: // Traverse GHB in correft CZone and add deltas to Comparison Register
-        {
+
             printGHB(CZoneTag);
 
             // TODO: do not include oldest delta/first delta when traversing. This delta will always be 0, since it is first in the list (head).
             for(std::list<GHBEntry>::iterator it = ghb_list.begin(); it != ghb_list.end(); it++){
-                if (it->CZoneTag == CZoneTag){ // only travers miss addresses in same CZone
+                //if (it->CZoneTag == CZoneTag){ // only travers miss addresses in same CZone
                     compare_register[1] = compare_register[0];
                     compare_register[0] = it->delta;
                     cout << "compare_register[0] = " << compare_register[0];
@@ -158,25 +148,16 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
 
                     delta_buffer.insert(delta_buffer.begin(), compare_register[0]); // Second cycle: shiften into delta_buffer at start of compare_register, according to algorithm
                         if(compare_register[0] == key_register[0] && compare_register[1] == key_register[1] && it->mem_addr != mem_addr ){ //correlation hits
-                            state = CZone;
                             cout << "correltaion hit" << endl;
                             delta_buffer.pop_back();
                             return delta_buffer;
                         }
-                    }
+                //    }
             }
+
             // No correlation found.
-            state = CZone;
             delta_buffer.clear();
             return delta_buffer; // return vector without any elements
-
-
-        }
-        case prefetch:
-        break;
-
-    } // switch
-} // while
 }
 
 // --------- PREFETCH SIMULATED FUNCTIONS ------------------------
@@ -209,8 +190,8 @@ void prefetch_access(AccessStat stat){
                 if(pf_addr < MAX_PHYS_MEM_ADDR){
                     cout << "Issue prefetch for address: " << pf_addr << endl;
                     //TODO:DPRINTF(HWPrefetch, "HWPrefetch\tAddress %#x was accessed. Prefetched %#x \n", stat.mem_addr, pf_addr);
-                    //TODO:if(!in_cache(pf_addr) && !in_mshr_queue(pf_addr)) //TODO: does this matter?
-                    //TODO:    issue_prefetch(pf_addr);
+                    //if(!in_cache(pf_addr) && !in_mshr_queue(pf_addr)) //TODO: does this matter?
+                    //    issue_prefetch(pf_addr);
                 }else{
                     cout << "Prefetch address out of bounds " << pf_addr << endl;
                 }

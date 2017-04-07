@@ -28,13 +28,10 @@ global_prefix('output/')
 # Configure
 global_args(
     '--checkpoint-dir=lib/cp',
-    '--checkpoint-restore=%d' % 1e9,
-     '--at-instruction',
-    '--caches',
-    '--l2cache',
-    '--standard-switch',
-    '--warmup-insts=%d' % 1e6,
-    '--max-inst=%d' % 1e6,
+    '--checkpoint-restore=%d' % 1e9, '--at-instruction',
+    '--caches', '--l2cache',
+    '--standard-switch', '--warmup-insts=%d' % 1e7,
+    '--max-inst=%d' % 1e7,
 
     '--l2size=1MB',
     '--membus-width=8', '--membus-clock=400MHz', '--mem-latency=30ns',

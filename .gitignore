@@ -38,3 +38,5 @@ prefetchers/c-dc/prefetcher.dSYM
 /framework/lib
 /framework/m5
 /framework/output
+
+/output
