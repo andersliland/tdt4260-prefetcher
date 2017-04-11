@@ -26,7 +26,8 @@
 #define MAX_QUEUE_SIZE 100
 
 /* The largest possible physical memory address. */
-#define MAX_PHYS_MEM_ADDR ((uint64_t)(256*1024*1024) - 1)
+#define MAX_PHYS_MEM_ADDR ((uint64_t)(256*1024*1024) - 1) // 268 435 455 (28bit)
+
 
 /* M5 note: must match typedefs in in base/types.hh */
 typedef uint64_t Addr;

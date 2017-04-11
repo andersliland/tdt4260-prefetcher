@@ -12,24 +12,15 @@
 #include <vector>
 #include <complex>
 
-
 #include "interface.hh"
-
-#define BLOCK_SIZE 64 // Size of cache blocks (cache lines) in bytes.
-#define MAX_QUEUE_SIZE 100 // Maximum number of pending prefetch requests.
-#define MAX_PHYS_MEM_ADDR ((uint64_t)(256*1024*1024) - 1) // 268 435 455
-// mem_addr is 28 bit
 
 using namespace std;
 
-//const int DELTA_CORRELATION_SEQUENCE_LENGTH = 2;
-//const int CZONE_SIZE = 64; // number of bytes in CZone
 const int PREFETCH_DEGREE = 4;
 const int GHB_LENGTH_MAX = 100;
-const int CZoneMask = 3; // number of digits to mask away
+const int CZoneSize = 64000;
 
 static int Timestep = 0;
-
 enum State{CZone,pushGHB, traverse, prefetch };
 
 struct GHBEntry{
@@ -65,7 +56,8 @@ static GHBTable * table;
 
 // Mask the 'CZoneMask' MSB of mem_addr
 Addr GHBTable::maskCZoneAddr(Addr mem_addr){
-    return mem_addr/pow(10,CZoneMask);
+    int mask = floor( log2(CZoneSize) + 1 );
+    return mem_addr >> mask;
 }
 
 void GHBTable::printGHB(int CZoneTag){
@@ -96,80 +88,78 @@ std::vector<int> GHBTable::calculatePrefetchAddr(Addr mem_addr){
     key_register[0] = -1;
     compare_register[0] = -1;
 
-        // Check IndexTable for ZCone tag, and add to list if not pressent.
-            Timestep++;
-            cout << "\n\n" << endl;
-            cout << "TIMESTEP\t" << Timestep << endl;
+    Timestep++;
+    cout << "\n\n" << endl;
+    cout << "TIMESTEP\t" << Timestep << endl;
 
-            CZoneTag = maskCZoneAddr(mem_addr); // mask CZone tag
-            entry->CZoneTag = CZoneTag;
+    // Check IndexTable for ZCone tag, and add to list if not pressent.
+    CZoneTag = maskCZoneAddr(mem_addr); // mask CZone tag
+    entry->CZoneTag = CZoneTag;
 
-            indexTableIterator = indexTable.find(CZoneTag);
-            if (indexTableIterator != indexTable.end()){ // tag found
-                    CZoneHead = indexTableIterator->second; // ptr to newest element in same CZone in GHB
-            }else{ // tag not found
-                CZoneHead = entry;
-                CZoneHead->mem_addr = mem_addr;
-                indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, CZoneHead));
+    indexTableIterator = indexTable.find(CZoneTag);
+    if (indexTableIterator != indexTable.end()){ // tag found
+        CZoneHead = indexTableIterator->second; // ptr to newest element in same CZone in GHB
+    }else{ // tag not found
+        CZoneHead = entry;
+        CZoneHead->mem_addr = mem_addr;
+        indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, CZoneHead));
+    }
+
+    entry->mem_addr = mem_addr;
+    entry->delta = mem_addr - CZoneHead->mem_addr;
+    cout << "Addr: " <<  entry->mem_addr << " Delta: " << entry->delta<< endl;
+
+    // add deltas to key_register
+    key_register[1] = CZoneHead->delta;
+    key_register[0] = entry->delta;
+    cout << "key_register[0] = " << key_register[0] << endl;
+    cout << "key_register[1] = " << key_register[1] << endl;
+
+    //update value in Index prt Table
+    CZoneHead = entry; // make new entry top of its CZone
+    indexTableIterator->second = entry; // update ptr in map to point to newest element in CZone
+
+    indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, CZoneHead));
+    ghb_list.push_front(*entry);
+    GHBNumberOfEntries++;
+
+    if (GHBNumberOfEntries > GHB_LENGTH_MAX){ // ghb_list is a FIFO. Pop end when list is too long.
+        ghb_list.pop_back();
+    }
+
+
+    //printGHB(CZoneTag);
+
+    // TODO: do not include oldest delta/first delta when traversing. This delta will always be 0, since it is first in the list (head).
+    for(std::list<GHBEntry>::iterator it = ghb_list.begin(); it != ghb_list.end(); it++){
+        if (it->CZoneTag == CZoneTag){ // only travers miss addresses in same CZone
+            compare_register[1] = compare_register[0];
+            compare_register[0] = it->delta;
+            //cout << "compare_register[0] = " << compare_register[0];
+            //cout << "  compare_register[1] = " << compare_register[1] << endl;
+
+            delta_buffer.insert(delta_buffer.begin(), compare_register[0]); // Second cycle: shift into delta_buffer at start of compare_register, according to algorithm
+
+            if(compare_register[0] == key_register[0] && compare_register[1] == key_register[1] && it->mem_addr != mem_addr ){ //correlation hits
+                //cout << "correltaion hit" << endl;
+                delta_buffer.pop_back(); // Remove first value in delta buffer
+                return delta_buffer;
             }
-
-            entry->mem_addr = mem_addr;
-            int temp_delta = mem_addr - CZoneHead->mem_addr;
-            entry->delta = abs(temp_delta); //TODO: can delta be negative?
-            cout << "Addr: " <<  entry->mem_addr << " Delta: " << entry->delta<< endl;
-
-            // add deltas to key_register
-            key_register[1] = CZoneHead->delta;
-            key_register[0] = entry->delta;
-            cout << "key_register[0] = " << key_register[0] << endl;
-            cout << "key_register[1] = " << key_register[1] << endl;
-
-            //update value in Index prt Table
-            CZoneHead = entry; // make new entry top of its CZone
-            indexTableIterator->second = entry; // update ptr in map to point to newest emelent in CZone
-
-            indexTable.insert(std::pair<Addr, GHBEntry*>(CZoneTag, CZoneHead));
-            ghb_list.push_front(*entry);
-            GHBNumberOfEntries++;
-
-            if (GHBNumberOfEntries > GHB_LENGTH_MAX){ // ghb_list is a FIFO. Pop end when list is too long.
-                cout << "pop ghb_list " << endl;
-            }
-
-            printGHB(CZoneTag);
-
-            // TODO: do not include oldest delta/first delta when traversing. This delta will always be 0, since it is first in the list (head).
-            for(std::list<GHBEntry>::iterator it = ghb_list.begin(); it != ghb_list.end(); it++){
-                //if (it->CZoneTag == CZoneTag){ // only travers miss addresses in same CZone
-                    compare_register[1] = compare_register[0];
-                    compare_register[0] = it->delta;
-                    cout << "compare_register[0] = " << compare_register[0];
-                    cout << "  compare_register[1] = " << compare_register[1] << endl;
-
-                    delta_buffer.insert(delta_buffer.begin(), compare_register[0]); // Second cycle: shiften into delta_buffer at start of compare_register, according to algorithm
-                        if(compare_register[0] == key_register[0] && compare_register[1] == key_register[1] && it->mem_addr != mem_addr ){ //correlation hits
-                            cout << "correltaion hit" << endl;
-                            delta_buffer.pop_back();
-                            return delta_buffer;
-                        }
-                //    }
-            }
-
-            // No correlation found.
-            delta_buffer.clear();
-            return delta_buffer; // return vector without any elements
+        }
+    }
+    // No correlation found.
+    delta_buffer.clear();
+    return delta_buffer; // return vector without any elements
 }
 
 // --------- PREFETCH SIMULATED FUNCTIONS ------------------------
 void prefetch_init(void){
     //TODO:DPRINTF(HWPrefetch, "HWPrefetch\tInitializing prefetcher\n");
-    std::cout << "prefetch_init" << std::endl;
     table = new GHBTable;
 
 }
 
 void prefetch_access(AccessStat stat){
-
     Addr pf_addr = 0, mem_addr = stat.mem_addr;
     std::vector<int> temp_delta_buffer;
     if(stat.miss){ //calculate prefetch address only on miss
@@ -179,7 +169,7 @@ void prefetch_access(AccessStat stat){
             cout << "No delta correlation found for miss addr: " << stat.mem_addr << endl;
         } else {
             int delta_buffer_size = temp_delta_buffer.size();
-            table->printDeltaBuffer(temp_delta_buffer);
+            //table->printDeltaBuffer(temp_delta_buffer);
 
             int j = 0;
             for(int i = 0; i < PREFETCH_DEGREE; i++){
